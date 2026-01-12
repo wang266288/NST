@@ -98,7 +98,7 @@ def compare_results(results_dict, save_dir=None):
     content_img = list(results_dict.values())[0]['content_img']
     style_img = list(results_dict.values())[0]['style_img']
     
-    # 原始图像 - 添加 .cpu() 调用
+    # 原始图像
     content_display = denormalize(content_img).squeeze(0).detach().cpu().numpy().transpose(1, 2, 0)
     content_display = np.clip(content_display, 0, 1)
     
