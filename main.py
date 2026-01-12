@@ -16,18 +16,13 @@ class GatysStyleTransfer:
     def __init__(self, device='cuda' if torch.cuda.is_available() else 'cpu'):
         self.device = device
         
-        # 加载VGG19模型
         self.vgg = models.vgg19(pretrained=True).features.to(device).eval()
-        
-        # 冻结所有参数
         for param in self.vgg.parameters():
             param.requires_grad = False
         
-        # 内容层和风格层
         self.content_layers = ['relu4_2']
         self.style_layers = ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1']
         
-        # 层名称到索引的映射（VGG19 features的索引）
         self.layer_indices = {
             'relu1_1': 1,
             'relu2_1': 6,
@@ -42,13 +37,11 @@ class GatysStyleTransfer:
         self.style_weight = 1e6
     
     def get_features(self, x):
-        """提取所有需要的层的特征"""
         features = {}
         
-        # 获取每一层的特征
+        # 获取特征
         for i, layer in enumerate(self.vgg):
             x = layer(x)
-            # 检查当前层是否是我们需要的
             for layer_name, layer_idx in self.layer_indices.items():
                 if i == layer_idx:
                     features[layer_name] = x
@@ -56,19 +49,15 @@ class GatysStyleTransfer:
         return features
     
     def gram_matrix(self, x):
-        """计算Gram矩阵"""
         batch_size, channels, h, w = x.size()
         features = x.view(batch_size, channels, h * w)
         
-        # 计算Gram矩阵 (b, c, c)
         gram = torch.bmm(features, features.transpose(1, 2))
         
-        # 归一化
         return gram.div(batch_size * channels * h * w)
     
     def transfer_style(self, content_img, style_img, iterations=300, lr=0.1):
         """执行风格迁移"""
-        # 初始化生成图像
         input_img = content_img.clone().requires_grad_(True)
         
         # 获取内容和风格特征
@@ -82,7 +71,7 @@ class GatysStyleTransfer:
         for layer in self.style_layers:
             style_grams[layer] = self.gram_matrix(style_features[layer])
         
-        # 使用Adam优化器（更稳定）
+        # 使用Adam优化器
         optimizer = torch.optim.Adam([input_img], lr=lr)
         
         print(f"开始风格迁移优化 ({iterations}次迭代)...")
@@ -115,8 +104,7 @@ class GatysStyleTransfer:
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
-            
-            # 限制像素值范围
+
             with torch.no_grad():
                 input_img.data.clamp_(0, 1)
             
@@ -137,7 +125,6 @@ class GatysStyleTransfer:
         }
 
 def load_image(image_path, size=512, device='cpu'):
-    """加载图像并进行预处理"""
     transform = transforms.Compose([
         transforms.Resize((size, size)),
         transforms.ToTensor(),
@@ -150,7 +137,6 @@ def load_image(image_path, size=512, device='cpu'):
     return image.to(device)
 
 def imshow(tensor, title=None):
-    """显示Tensor图像"""
     image = tensor.cpu().clone()
     image = image.squeeze(0)
     
@@ -159,7 +145,6 @@ def imshow(tensor, title=None):
     std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
     image = image * std + mean
     
-    # 转换为numpy数组
     image = image.detach().numpy().transpose(1, 2, 0)
     image = np.clip(image, 0, 1)
     
@@ -171,7 +156,6 @@ def imshow(tensor, title=None):
     plt.show()
 
 def save_image(tensor, filename):
-    """保存Tensor为图像文件"""
     image = tensor.cpu().clone()
     image = image.squeeze(0)
     
@@ -180,7 +164,6 @@ def save_image(tensor, filename):
     std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
     image = image * std + mean
     
-    # 转换为PIL图像并保存
     image = transforms.ToPILImage()(image.detach())
     image.save(filename)
     print(f"图像已保存: {filename}")
@@ -202,7 +185,6 @@ def main():
     print("=" * 60)
 
     
-    # 设置设备
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"使用设备: {device}")
     
@@ -223,7 +205,6 @@ def main():
     imshow(content_img, "内容图像")
     imshow(style_img, "风格图像")
     
-    # 创建输出目录
     os.makedirs(args.output, exist_ok=True)
     
     # 初始化模型
@@ -242,7 +223,6 @@ def main():
     print("显示结果图像...")
     imshow(generated_img, "风格迁移结果")
     
-    # 保存结果
     import datetime
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = os.path.join(args.output, f"result_{timestamp}.jpg")
