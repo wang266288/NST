@@ -13,6 +13,6 @@ Meanwhile, `--content-weight`, `--style-weight` and `--lap-weight` are also usab
 
 If you want to see the loss curve, please use `--plot-loss`. You could also use `--show-image` to see the original image and generated image immediately.
 
-Finally, you are allowed to use `--compare` to print a picture to compare the results from different NST models. Use `--compare-mothods` to specify those models.
+Finally, you are allowed to use `--compare` to print a picture to compare the results from different NST models, and use `--compare-mothods` to specify those models.
 
 The outputs will be saved in [output](./output) folder, for gatys' in [gatysstyle](./output/gatysstyle), lap's in [lapstyle](./output/lapstyle) and comparison in [comparisons](./output/comparisons), including the generated image and the loss curves.
