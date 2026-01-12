@@ -9,7 +9,7 @@ Now it has two available NST models, please use `--transfer` to specify which ty
 
 You can also use `--size` to resize the size of your imgaes, use `--iterations` and `--lr` to adjust the hyperparameters.
 
-Meanwhile, `--content-weight`, `style-weight` and `lap-weight` are also usable.
+Meanwhile, `--content-weight`, `--style-weight` and `--lap-weight` are also usable.
 
 If you want to see the loss curve, please use `--plot-loss`. You could also use `--show-image` to see the original image and generated image immediately.
 
