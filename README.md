@@ -16,3 +16,5 @@ If you want to see the loss curve, please use `--plot-loss`. You could also use 
 Finally, you are allowed to use `--compare` to print a picture to compare the results from different NST models, and use `--compare-mothods` to specify those models.
 
 The outputs will be saved in [output](./output) folder, for gatys' in [gatysstyle](./output/gatysstyle), lap's in [lapstyle](./output/lapstyle) and comparison in [comparisons](./output/comparisons), including the generated image and the loss curves.
+
+If you need to add a new model, simply create a new python file, implement a class, and then add the corresponding creation logic in the `create_style_transfer_model` function in main.py. Your class can inherit from `GatysStyleTransfer` in gatysstyle.py.
