@@ -16,7 +16,7 @@ class GatysStyleTransfer:
     def __init__(self, device='cuda' if torch.cuda.is_available() else 'cpu'):
         self.device = device
         
-        self.vgg = models.vgg19(pretrained=True).features.to(device).eval()
+        self.vgg = models.vgg19(weights='IMAGENET1K_V1').features.to(device).eval()
         for param in self.vgg.parameters():
             param.requires_grad = False
         
@@ -171,14 +171,19 @@ def save_image(tensor, filename):
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='Gatys风格迁移')
-    parser.add_argument('--content', type=str, default='examples/content/content.jpg', help='内容图像路径')
-    parser.add_argument('--style', type=str, default='examples/style/style.jpg', help='风格图像路径')
+    parser.add_argument('--content', type=str, default='content.jpg', help='内容图像文件名')
+    parser.add_argument('--style', type=str, default='style.jpg', help='风格图像文件名')
     parser.add_argument('--size', type=int, default=256, help='图像大小')
     parser.add_argument('--iterations', type=int, default=100, help='迭代次数')
     parser.add_argument('--lr', type=float, default=0.1, help='学习率')
     parser.add_argument('--output', type=str, default='output', help='输出目录')
-    
+
+    parser.add_argument('--content-dir', type=str, default='examples/content', help='内容图像目录')
+    parser.add_argument('--style-dir', type=str, default='examples/style', help='风格图像目录')
+
     args = parser.parse_args()
+    content_path = os.path.join(args.content_dir, args.content)
+    style_path = os.path.join(args.style_dir, args.style)
     
     print("=" * 60)
     print("GATYS风格迁移")
@@ -191,19 +196,19 @@ def main():
     try:
         # 加载图像
         print(f"加载内容图像: {args.content}")
-        content_img = load_image(args.content, size=args.size, device=device)
+        content_img = load_image(content_path, size=args.size, device=device)
         
         print(f"加载风格图像: {args.style}")
-        style_img = load_image(args.style, size=args.size, device=device)
+        style_img = load_image(style_path, size=args.size, device=device)
     except Exception as e:
         print(f"加载图像失败: {e}")
-        print("请确保图像文件存在且格式正确（支持.jpg, .png, .jpeg等格式）。")
+        print("请确保图像文件存在且格式正确。")
         return
     
     # 显示原始图像
     print("显示原始图像...")
-    imshow(content_img, "内容图像")
-    imshow(style_img, "风格图像")
+    imshow(content_img, "content image")
+    imshow(style_img, "style image")
     
     os.makedirs(args.output, exist_ok=True)
     
@@ -221,7 +226,7 @@ def main():
     
     # 显示结果
     print("显示结果图像...")
-    imshow(generated_img, "风格迁移结果")
+    imshow(generated_img, "generated image")
     
     import datetime
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
