@@ -1,7 +1,4 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.models as models
 import torchvision.transforms as transforms
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -9,122 +6,10 @@ import numpy as np
 import os
 import argparse
 import sys
-
-class GatysStyleTransfer:
-    """Gatys风格迁移实现"""
-    
-    def __init__(self, device='cuda' if torch.cuda.is_available() else 'cpu'):
-        self.device = device
-        
-        self.vgg = models.vgg19(weights='IMAGENET1K_V1').features.to(device).eval()
-        for param in self.vgg.parameters():
-            param.requires_grad = False
-        
-        self.content_layers = ['relu4_2']
-        self.style_layers = ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1']
-        
-        self.layer_indices = {
-            'relu1_1': 1,
-            'relu2_1': 6,
-            'relu3_1': 11,
-            'relu4_1': 20,
-            'relu4_2': 22,
-            'relu5_1': 29
-        }
-        
-        # 损失权重
-        self.content_weight = 1
-        self.style_weight = 1e6
-    
-    def get_features(self, x):
-        features = {}
-        
-        # 获取特征
-        for i, layer in enumerate(self.vgg):
-            x = layer(x)
-            for layer_name, layer_idx in self.layer_indices.items():
-                if i == layer_idx:
-                    features[layer_name] = x
-        
-        return features
-    
-    def gram_matrix(self, x):
-        batch_size, channels, h, w = x.size()
-        features = x.view(batch_size, channels, h * w)
-        
-        gram = torch.bmm(features, features.transpose(1, 2))
-        
-        return gram.div(batch_size * channels * h * w)
-    
-    def transfer_style(self, content_img, style_img, iterations=300, lr=0.1):
-        """执行风格迁移"""
-        input_img = content_img.clone().requires_grad_(True)
-        
-        # 获取内容和风格特征
-        print("提取内容图像特征...")
-        content_features = self.get_features(content_img)
-        print("提取风格图像特征...")
-        style_features = self.get_features(style_img)
-        
-        # 计算风格特征的Gram矩阵
-        style_grams = {}
-        for layer in self.style_layers:
-            style_grams[layer] = self.gram_matrix(style_features[layer])
-        
-        # 使用Adam优化器
-        optimizer = torch.optim.Adam([input_img], lr=lr)
-        
-        print(f"开始风格迁移优化 ({iterations}次迭代)...")
-        
-        # 记录损失历史
-        loss_history = []
-        content_loss_history = []
-        style_loss_history = []
-        
-        for i in range(iterations):
-            # 前向传播
-            input_features = self.get_features(input_img)
-            
-            # 计算内容损失
-            content_loss = 0
-            for layer in self.content_layers:
-                content_loss += F.mse_loss(input_features[layer], content_features[layer])
-            
-            # 计算风格损失
-            style_loss = 0
-            for layer in self.style_layers:
-                input_gram = self.gram_matrix(input_features[layer])
-                style_gram = style_grams[layer]
-                style_loss += F.mse_loss(input_gram, style_gram)
-            
-            # 总损失
-            total_loss = self.content_weight * content_loss + self.style_weight * style_loss
-            
-            # 反向传播
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
-
-            with torch.no_grad():
-                input_img.data.clamp_(0, 1)
-            
-            # 记录损失
-            loss_history.append(total_loss.item())
-            content_loss_history.append(content_loss.item())
-            style_loss_history.append(style_loss.item())
-            
-            if i % 50 == 0:
-                print(f"迭代 {i}/{iterations}: 总损失 = {total_loss.item():.2e}, "
-                      f"内容损失 = {content_loss.item():.2e}, "
-                      f"风格损失 = {style_loss.item():.2e}")
-        
-        return input_img, {
-            'total_loss': loss_history,
-            'content_loss': content_loss_history,
-            'style_loss': style_loss_history
-        }
+import datetime
 
 def load_image(image_path, size=512, device='cpu'):
+    """加载并预处理图像"""
     transform = transforms.Compose([
         transforms.Resize((size, size)),
         transforms.ToTensor(),
@@ -136,19 +21,23 @@ def load_image(image_path, size=512, device='cpu'):
     image = transform(image).unsqueeze(0)
     return image.to(device)
 
-def imshow(tensor, title=None):
+def denormalize(tensor):
+    """反标准化图像"""
+    mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+    return tensor * std + mean
+
+def imshow(tensor, title=None, figsize=(8, 8)):
+    """显示图像"""
     image = tensor.cpu().clone()
-    image = image.squeeze(0)
     
     # 反标准化
-    mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-    image = image * std + mean
+    image = denormalize(image)
     
-    image = image.detach().numpy().transpose(1, 2, 0)
+    image = image.squeeze(0).detach().numpy().transpose(1, 2, 0)
     image = np.clip(image, 0, 1)
     
-    plt.figure(figsize=(8, 8))
+    plt.figure(figsize=figsize)
     plt.imshow(image)
     if title:
         plt.title(title, fontsize=16)
@@ -156,42 +45,141 @@ def imshow(tensor, title=None):
     plt.show()
 
 def save_image(tensor, filename):
+    """保存图像"""
     image = tensor.cpu().clone()
-    image = image.squeeze(0)
     
     # 反标准化
-    mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-    image = image * std + mean
+    image = denormalize(image)
     
+    image = image.squeeze(0)
     image = transforms.ToPILImage()(image.detach())
     image.save(filename)
     print(f"图像已保存: {filename}")
+    return filename
 
-def main():
-    """主函数"""
-    parser = argparse.ArgumentParser(description='Gatys风格迁移')
-    parser.add_argument('--content', type=str, default='content.jpg', help='内容图像文件名')
-    parser.add_argument('--style', type=str, default='style.jpg', help='风格图像文件名')
-    parser.add_argument('--size', type=int, default=256, help='图像大小')
-    parser.add_argument('--iterations', type=int, default=100, help='迭代次数')
-    parser.add_argument('--lr', type=float, default=0.1, help='学习率')
-    parser.add_argument('--output', type=str, default='output', help='输出目录')
+def plot_loss_curves(loss_history, title_prefix, save_dir):
+    """绘制损失曲线"""
+    if not loss_history:
+        return None
+    
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # 根据损失类型确定子图数量
+    loss_types = list(loss_history.keys())
+    n_plots = len(loss_types)
+    
+    fig = plt.figure(figsize=(5 * n_plots, 4))
+    
+    for i, loss_type in enumerate(loss_types, 1):
+        plt.subplot(1, n_plots, i)
+        plt.plot(loss_history[loss_type])
+        plt.title(f'{loss_type.replace("_", " ").title()}')
+        plt.xlabel('Iterations')
+        plt.ylabel('Loss Value')
+        plt.grid(True, alpha=0.3)
+    
+    plt.suptitle(f'{title_prefix} Loss Curves', fontsize=16)
+    plt.tight_layout()
+    
+    # 保存图像
+    loss_curve_path = os.path.join(save_dir, f"loss_curves_{timestamp}.png")
+    plt.savefig(loss_curve_path, dpi=150, bbox_inches='tight')
+    plt.show()
+    
+    return loss_curve_path
 
-    parser.add_argument('--content-dir', type=str, default='examples/content', help='内容图像目录')
-    parser.add_argument('--style-dir', type=str, default='examples/style', help='风格图像目录')
+def compare_results(results_dict, save_dir=None):
+    """不同方法对比"""
+    n_methods = len(results_dict)
+    fig, axes = plt.subplots(2, n_methods + 1, figsize=(5 * (n_methods + 1), 10))
+    
+    # 获取内容图像用于显示
+    content_img = list(results_dict.values())[0]['content_img']
+    style_img = list(results_dict.values())[0]['style_img']
+    
+    # 原始图像
+    content_display = denormalize(content_img).squeeze(0).detach().numpy().transpose(1, 2, 0)
+    content_display = np.clip(content_display, 0, 1)
+    
+    style_display = denormalize(style_img).squeeze(0).detach().numpy().transpose(1, 2, 0)
+    style_display = np.clip(style_display, 0, 1)
+    
+    # 显示内容图像和风格图像
+    axes[0, 0].imshow(content_display)
+    axes[0, 0].set_title('Content Image', fontsize=12)
+    axes[0, 0].axis('off')
+    
+    axes[1, 0].imshow(style_display)
+    axes[1, 0].set_title('Style Image', fontsize=12)
+    axes[1, 0].axis('off')
+    
+    # 显示每种方法的结果
+    for idx, (method_name, result) in enumerate(results_dict.items(), 1):
+        generated_img = result['generated_img']
+        generated_display = denormalize(generated_img).squeeze(0).detach().numpy().transpose(1, 2, 0)
+        generated_display = np.clip(generated_display, 0, 1)
+        
+        axes[0, idx].imshow(generated_display)
+        axes[0, idx].set_title(f'{method_name}\nGenerated', fontsize=12)
+        axes[0, idx].axis('off')
+        
+        # 显示损失曲线
+        if 'loss_history' in result and 'total_loss' in result['loss_history']:
+            axes[1, idx].plot(result['loss_history']['total_loss'][:100])
+            axes[1, idx].set_title(f'{method_name}\nLoss Curve', fontsize=10)
+            axes[1, idx].set_xlabel('Iterations')
+            axes[1, idx].set_ylabel('Loss')
+            axes[1, idx].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    if save_dir:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        comparison_path = os.path.join(save_dir, f"comparison_{timestamp}.png")
+        plt.savefig(comparison_path, dpi=150, bbox_inches='tight')
+        print(f"对比图已保存: {comparison_path}")
+        return comparison_path
+    
+    plt.show()
+    return None
 
-    args = parser.parse_args()
+def create_style_transfer_model(transfer_type, device, **kwargs):
+    """创建风格迁移模型"""
+    if transfer_type.lower() == 'gatysstyle':
+        from gatysstyle import GatysStyleTransfer
+        model = GatysStyleTransfer(device=device)
+        if 'content_weight' in kwargs or 'style_weight' in kwargs:
+            model.set_weights(
+                content_weight=kwargs.get('content_weight', 1),
+                style_weight=kwargs.get('style_weight', 1e6)
+            )
+        return model
+    
+    elif transfer_type.lower() == 'lapstyle':
+        from lapstyle import LapStyleTransfer
+        model = LapStyleTransfer(device=device)
+        if any(k in kwargs for k in ['content_weight', 'style_weight', 'lap_weight']):
+            model.set_weights(
+                content_weight=kwargs.get('content_weight', 1),
+                style_weight=kwargs.get('style_weight', 1e6),
+                lap_weight=kwargs.get('lap_weight', 0.5e3)
+            )
+        return model
+    
+    else:
+        raise ValueError(f"不支持的风格迁移类型: {transfer_type}")
+
+def run_style_transfer(args):
+    """运行风格迁移"""
+    print("=" * 60)
+    print(f"{args.transfer.upper()} 风格迁移")
+    print("=" * 60)
+    
+    # 设置设备和路径
+    device = 'cuda' if torch.cuda.is_available() and not args.cpu else 'cpu'
+    print(f"使用设备: {device}")
     content_path = os.path.join(args.content_dir, args.content)
     style_path = os.path.join(args.style_dir, args.style)
-    
-    print("=" * 60)
-    print("GATYS风格迁移")
-    print("=" * 60)
-
-    
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"使用设备: {device}")
     
     try:
         # 加载图像
@@ -203,18 +191,27 @@ def main():
     except Exception as e:
         print(f"加载图像失败: {e}")
         print("请确保图像文件存在且格式正确。")
-        return
+        sys.exit(1)
     
     # 显示原始图像
-    print("显示原始图像...")
-    imshow(content_img, "content image")
-    imshow(style_img, "style image")
+    if args.show_images:
+        print("显示原始图像...")
+        imshow(content_img, "Content Image")
+        imshow(style_img, "Style Image")
     
-    os.makedirs(args.output, exist_ok=True)
+    # 创建输出目录
+    output_dir = os.path.join(args.output, args.transfer)
+    os.makedirs(output_dir, exist_ok=True)
     
-    # 初始化模型
-    print("初始化风格迁移模型...")
-    model = GatysStyleTransfer(device=device)
+    # 创建风格迁移模型
+    print(f"初始化{args.transfer}风格迁移模型...")
+    model = create_style_transfer_model(
+        args.transfer, 
+        device,
+        content_weight=args.content_weight,
+        style_weight=args.style_weight,
+        lap_weight=args.lap_weight
+    )
     
     # 执行风格迁移
     print("开始风格迁移...")
@@ -225,49 +222,133 @@ def main():
     )
     
     # 显示结果
-    print("显示结果图像...")
-    imshow(generated_img, "generated image")
+    if args.show_images:
+        print("显示生成图像...")
+        imshow(generated_img, f"{args.transfer} Generated Image")
     
-    import datetime
+    # 保存结果
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = os.path.join(args.output, f"result_{timestamp}.jpg")
+    output_filename = f"{args.transfer}_result_{timestamp}.jpg"
+    output_path = os.path.join(output_dir, output_filename)
     save_image(generated_img, output_path)
     
     # 绘制损失曲线
-    if loss_history['total_loss']:
-        plt.figure(figsize=(12, 4))
-        
-        plt.subplot(1, 3, 1)
-        plt.plot(loss_history['total_loss'])
-        plt.title('Total Loss')
-        plt.xlabel('Iterations')
-        plt.ylabel('Loss Value')
-        plt.grid(True, alpha=0.3)
-        
-        plt.subplot(1, 3, 2)
-        plt.plot(loss_history['content_loss'])
-        plt.title('Content Loss')
-        plt.xlabel('Iterations')
-        plt.ylabel('Loss Value')
-        plt.grid(True, alpha=0.3)
-        
-        plt.subplot(1, 3, 3)
-        plt.plot(loss_history['style_loss'])
-        plt.title('Style Loss')
-        plt.xlabel('Iterations')
-        plt.ylabel('Loss Value')
-        plt.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        loss_curve_path = os.path.join(args.output, f"loss_curves_{timestamp}.png")
-        plt.savefig(loss_curve_path, dpi=150, bbox_inches='tight')
-        print(f"损失曲线已保存: {loss_curve_path}")
-        plt.show()
+    if args.plot_loss:
+        loss_curve_path = plot_loss_curves(
+            loss_history, 
+            args.transfer, 
+            output_dir
+        )
+        if loss_curve_path:
+            print(f"损失曲线已保存: {loss_curve_path}")
     
     print("=" * 60)
-    print("风格迁移完成！")
+    print(f"{args.transfer} 风格迁移完成！")
     print(f"结果保存到: {output_path}")
     print("=" * 60)
+    
+    return {
+        'transfer_type': args.transfer,
+        'generated_img': generated_img,
+        'content_img': content_img,
+        'style_img': style_img,
+        'loss_history': loss_history,
+        'output_path': output_path
+    }
+
+def main():
+    """主函数"""
+    parser = argparse.ArgumentParser(description='神经风格迁移系统')
+    
+    # 风格迁移参数
+    parser.add_argument('--transfer', type=str, choices=['gatysstyle', 'lapstyle'], default='gatysstyle',
+                       help='风格迁移方法: gatysstyle, lapstyle')
+    
+    # 图像参数
+    parser.add_argument('--content', type=str, default='content.jpg',
+                       help='内容图像文件名')
+    parser.add_argument('--style', type=str, default='style.jpg',
+                       help='风格图像文件名')
+    parser.add_argument('--content-dir', type=str, default='examples/content',
+                       help='内容图像目录')
+    parser.add_argument('--style-dir', type=str, default='examples/style',
+                       help='风格图像目录')
+    
+    # 超参数
+    parser.add_argument('--size', type=int, default=256,
+                       help='图像大小')
+    parser.add_argument('--iterations', type=int, default=200,
+                       help='迭代次数')
+    parser.add_argument('--lr', type=float, default=0.1,
+                       help='学习率')
+    
+    # 损失权重
+    parser.add_argument('--content-weight', type=float, default=1.0,
+                       help='内容损失权重')
+    parser.add_argument('--style-weight', type=float, default=1e6,
+                       help='风格损失权重')
+    parser.add_argument('--lap-weight', type=float, default=0.5e3,
+                       help='拉普拉斯损失权重')
+    
+    # 输出选项
+    parser.add_argument('--output', type=str, default='output',
+                       help='输出目录')
+    parser.add_argument('--plot-loss', action='store_true',
+                       help='绘制损失曲线')
+    parser.add_argument('--show-images', action='store_true',
+                       help='显示图像')
+    parser.add_argument('--cpu', action='store_true',
+                       help='强制使用CPU')
+    
+    # 对比模式
+    parser.add_argument('--compare', action='store_true',
+                       help='对比多种方法')
+    parser.add_argument('--compare-methods', type=str, nargs='+',
+                       default=['gatysstyle', 'lapstyle'],
+                       help='要对比的方法列表')
+    
+    args = parser.parse_args()
+    
+    # 启用对比模式
+    if args.compare:
+        print("=" * 60)
+        print("多方法对比模式")
+        print("=" * 60)
+        
+        results = {}
+        
+        for method in args.compare_methods:
+            print(f"\n运行 {method}...")
+            # 临时修改参数
+            args_copy = argparse.Namespace(**vars(args))
+            args_copy.transfer = method
+            
+            # 运行风格迁移
+            result = run_style_transfer(args_copy)
+            results[method] = result
+        
+        # 生成对比图
+        print("\n生成对比图...")
+        comparison_dir = os.path.join(args.output, 'comparisons')
+        os.makedirs(comparison_dir, exist_ok=True)
+        
+        compare_results({
+            method: {
+                'generated_img': results[method]['generated_img'],
+                'content_img': results[method]['content_img'],
+                'style_img': results[method]['style_img'],
+                'loss_history': results[method]['loss_history']
+            }
+            for method in results
+        }, comparison_dir)
+        
+        print("\n" + "=" * 60)
+        print("对比完成！")
+        print("=" * 60)
+        
+    else:
+        # 单一方法模式
+        run_style_transfer(args)
 
 if __name__ == "__main__":
     main()
