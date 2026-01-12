@@ -23,8 +23,9 @@ def load_image(image_path, size=512, device='cpu'):
 
 def denormalize(tensor):
     """反标准化图像"""
-    mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+    device = tensor.device
+    mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
     return tensor * std + mean
 
 def imshow(tensor, title=None, figsize=(8, 8)):
@@ -34,7 +35,7 @@ def imshow(tensor, title=None, figsize=(8, 8)):
     # 反标准化
     image = denormalize(image)
     
-    image = image.squeeze(0).detach().numpy().transpose(1, 2, 0)
+    image = image.squeeze(0).detach().cpu().numpy().transpose(1, 2, 0)
     image = np.clip(image, 0, 1)
     
     plt.figure(figsize=figsize)
@@ -97,11 +98,11 @@ def compare_results(results_dict, save_dir=None):
     content_img = list(results_dict.values())[0]['content_img']
     style_img = list(results_dict.values())[0]['style_img']
     
-    # 原始图像
-    content_display = denormalize(content_img).squeeze(0).detach().numpy().transpose(1, 2, 0)
+    # 原始图像 - 添加 .cpu() 调用
+    content_display = denormalize(content_img).squeeze(0).detach().cpu().numpy().transpose(1, 2, 0)
     content_display = np.clip(content_display, 0, 1)
     
-    style_display = denormalize(style_img).squeeze(0).detach().numpy().transpose(1, 2, 0)
+    style_display = denormalize(style_img).squeeze(0).detach().cpu().numpy().transpose(1, 2, 0)
     style_display = np.clip(style_display, 0, 1)
     
     # 显示内容图像和风格图像
@@ -116,7 +117,7 @@ def compare_results(results_dict, save_dir=None):
     # 显示每种方法的结果
     for idx, (method_name, result) in enumerate(results_dict.items(), 1):
         generated_img = result['generated_img']
-        generated_display = denormalize(generated_img).squeeze(0).detach().numpy().transpose(1, 2, 0)
+        generated_display = denormalize(generated_img).squeeze(0).detach().cpu().numpy().transpose(1, 2, 0)
         generated_display = np.clip(generated_display, 0, 1)
         
         axes[0, idx].imshow(generated_display)
