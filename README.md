@@ -1,7 +1,7 @@
 # NST
 Please put the **content images** into the [content](./data/content) folder, put the **style images** into the [style](./data/style) folder.
 
-Before running, please use `.venv\Scripts\activate` to activate the virtual environment first.
+Before running, please use `python -m venv .venv`, `pip install -r requirements.txt`, `.venv\Scripts\activate` to activate the virtual environment first.
 
 Please use `python main.py --transfer gatysstyle --content YOUR_CONTENT_IMAGE.JPG --style YOUR_STYLE_IMAGE.JPG --show-image` to give your first try.
 
