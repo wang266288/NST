@@ -73,6 +73,11 @@ class LapStyleTransfer(GatysStyleTransfer):
         content_loss_history = []
         style_loss_history = []
         lap_loss_history = []
+
+        # 动态权重调整
+        content_weight = self.content_weight
+        style_weight = self.style_weight
+        lap_weight = self.lap_weight
         
         for i in range(iterations):
             # 前向传播
@@ -93,10 +98,26 @@ class LapStyleTransfer(GatysStyleTransfer):
             # 计算拉普拉斯损失
             lap_loss = self.laplacian_loss(input_img, content_img)
             
-            # 总损失
-            total_loss = (self.content_weight * content_loss + 
-                         self.style_weight * style_loss + 
-                         self.lap_weight * lap_loss)
+            # 根据迭代阶段调整权重
+            progress = i / iterations
+            
+            # 早期：强调风格损失
+            if progress < 0.3:
+                effective_style_weight = style_weight * 1.5
+                effective_lap_weight = lap_weight * 0.5
+            # 中期：平衡所有损失
+            elif progress < 0.7:
+                effective_style_weight = style_weight * 1.2
+                effective_lap_weight = lap_weight * 0.8
+            # 后期：强调内容和拉普拉斯损失
+            else:
+                effective_style_weight = style_weight * 0.8
+                effective_lap_weight = lap_weight * 1.2
+            
+            # 计算总损失
+            total_loss = (content_weight * content_loss + 
+                        effective_style_weight * style_loss + 
+                        effective_lap_weight * lap_loss)
             
             # 反向传播
             optimizer.zero_grad()
