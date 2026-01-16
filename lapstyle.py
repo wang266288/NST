@@ -147,7 +147,7 @@ class LapStyleTransfer(GatysStyleTransfer):
             'lap_loss': lap_loss_history
         }
     
-    def set_weights(self, content_weight=1, style_weight=1e6, lap_weight=0.5e3):
+    def set_weights(self, content_weight=1, style_weight=1e4, lap_weight=0.5e3):
         """设置损失权重"""
         super().set_weights(content_weight, style_weight)
         self.lap_weight = lap_weight

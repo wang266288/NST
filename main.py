@@ -7,6 +7,7 @@ import os
 import argparse
 import sys
 import datetime
+from gatysstyle import MultiStyleMultiContentTransfer
 
 def load_image(image_path, size=512, device='cpu'):
     """加载并预处理图像"""
@@ -151,130 +152,177 @@ def create_style_transfer_model(transfer_type, device, **kwargs):
         model = GatysStyleTransfer(device=device)
         if 'content_weight' in kwargs or 'style_weight' in kwargs:
             model.set_weights(
-                content_weight=kwargs.get('content_weight', 1),
-                style_weight=kwargs.get('style_weight', 1e6)
+                content_weight=kwargs.get('content_weight', 1.0),
+                style_weight=kwargs.get('style_weight', 1e4)
             )
         return model
-    
+
     elif transfer_type.lower() == 'lapstyle':
         from lapstyle import LapStyleTransfer
         model = LapStyleTransfer(device=device)
         if any(k in kwargs for k in ['content_weight', 'style_weight', 'lap_weight']):
             model.set_weights(
-                content_weight=kwargs.get('content_weight', 1),
-                style_weight=kwargs.get('style_weight', 1e6),
+                content_weight=kwargs.get('content_weight', 1.0),
+                style_weight=kwargs.get('style_weight', 1e4),
                 lap_weight=kwargs.get('lap_weight', 0.5e3)
             )
         return model
-    
+
+    elif transfer_type.lower() == 'multigatysstyle':
+        model = MultiStyleMultiContentTransfer(device=device)
+        if 'content_weights' in kwargs or 'style_weights' in kwargs:
+            model.set_multi_weights(
+                content_weights=kwargs.get('content_weights', None),
+                style_weights=kwargs.get('style_weights', None)
+            )
+        return model
+
     else:
-        raise ValueError(f"不支持的风格迁移类型: {transfer_type}")
+        raise ValueError(f"未知的风格迁移类型: {transfer_type}")
 
 def run_style_transfer(args):
     """运行风格迁移"""
     print("=" * 60)
     print(f"{args.transfer.upper()} 风格迁移")
     print("=" * 60)
-    
+
     # 设置设备和路径
     device = 'cuda' if torch.cuda.is_available() and not args.cpu else 'cpu'
     print(f"使用设备: {device}")
-    content_path = os.path.join(args.content_dir, args.content)
-    style_path = os.path.join(args.style_dir, args.style)
-    
-    try:
-        # 加载图像
-        print(f"加载内容图像: {args.content}")
-        content_img = load_image(content_path, size=args.size, device=device)
-        
-        print(f"加载风格图像: {args.style}")
-        style_img = load_image(style_path, size=args.size, device=device)
-    except Exception as e:
-        print(f"加载图像失败: {e}")
-        print("请确保图像文件存在且格式正确。")
-        sys.exit(1)
-    
-    # 显示原始图像
-    if args.show_images:
-        print("显示原始图像...")
-        imshow(content_img, "Content Image")
-        imshow(style_img, "Style Image")
-    
-    # 创建输出目录
-    output_dir = os.path.join(args.output, args.transfer)
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # 创建风格迁移模型
-    print(f"初始化{args.transfer}风格迁移模型...")
-    model = create_style_transfer_model(
-        args.transfer, 
-        device,
-        content_weight=args.content_weight,
-        style_weight=args.style_weight,
-        lap_weight=args.lap_weight
-    )
-    
-    # 执行风格迁移
-    print("开始风格迁移...")
-    generated_img, loss_history = model.transfer_style(
-        content_img, style_img, 
-        iterations=args.iterations, 
-        lr=args.lr
-    )
-    
-    # 显示结果
-    if args.show_images:
-        print("显示生成图像...")
-        imshow(generated_img, f"{args.transfer} Generated Image")
-    
-    # 保存结果
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_filename = f"{args.transfer}_result_{timestamp}.jpg"
-    output_path = os.path.join(output_dir, output_filename)
-    save_image(generated_img, output_path)
-    
-    # 绘制损失曲线
-    if args.plot_loss:
-        loss_curve_path = plot_loss_curves(
-            loss_history, 
-            args.transfer, 
-            output_dir
+
+    # 检查是否为多图像模式
+    if args.content_images and args.style_images:
+        content_paths = [os.path.join(args.content_dir, img) for img in args.content_images]
+        style_paths = [os.path.join(args.style_dir, img) for img in args.style_images]
+
+        content_imgs = [load_image(path, size=args.size, device=device) for path in content_paths]
+        style_imgs = [load_image(path, size=args.size, device=device) for path in style_paths]
+
+        # 创建风格迁移模型
+        print(f"初始化{args.transfer}风格迁移模型...")
+        model = create_style_transfer_model(
+            args.transfer,
+            device,
+            content_weights=args.content_weights,
+            style_weights=args.style_weights
         )
-        if loss_curve_path:
-            print(f"损失曲线已保存: {loss_curve_path}")
-    
-    print("=" * 60)
-    print(f"{args.transfer} 风格迁移完成！")
-    print(f"结果保存到: {output_path}")
-    print("=" * 60)
-    
-    return {
-        'transfer_type': args.transfer,
-        'generated_img': generated_img,
-        'content_img': content_img,
-        'style_img': style_img,
-        'loss_history': loss_history,
-        'output_path': output_path
-    }
+
+        # 执行风格迁移
+        print("开始风格迁移...")
+        generated_img, loss_history = model.transfer_multi_style_multi_content(
+            content_imgs, style_imgs,
+            iterations=args.iterations,
+            lr=args.lr
+        )
+
+        # 保存结果
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = os.path.join(args.output, args.transfer)
+        os.makedirs(output_dir, exist_ok=True)
+        output_filename = f"{args.transfer}_result_{timestamp}.jpg"
+        output_path = os.path.join(output_dir, output_filename)
+        save_image(generated_img, output_path)
+
+        # 显示生成图像
+        if args.show_images:
+            imshow(generated_img, title="Generated Image")
+
+        # 绘制损失曲线
+        if args.plot_loss:
+            plot_loss_curves(loss_history, title_prefix=args.transfer, save_dir=output_dir)
+
+        print("=" * 60)
+        print(f"{args.transfer} 风格迁移完成！")
+        print(f"结果保存到: {output_path}")
+        print("=" * 60)
+
+        return {
+            'transfer_type': args.transfer,
+            'generated_img': generated_img,
+            'content_imgs': content_imgs,
+            'style_imgs': style_imgs,
+            'loss_history': loss_history,
+            'output_path': output_path
+        }
+
+    else:
+        # 单图像模式
+        content_path = os.path.join(args.content_dir, args.content)
+        style_path = os.path.join(args.style_dir, args.style)
+
+        content_img = load_image(content_path, size=args.size, device=device)
+        style_img = load_image(style_path, size=args.size, device=device)
+
+        # 创建风格迁移模型
+        print(f"初始化{args.transfer}风格迁移模型...")
+        model = create_style_transfer_model(
+            args.transfer,
+            device,
+            content_weight=args.content_weight,
+            style_weight=args.style_weight,
+            lap_weight=args.lap_weight
+        )
+
+        # 执行风格迁移
+        print("开始风格迁移...")
+        generated_img, loss_history = model.transfer_style(
+            content_img, style_img,
+            iterations=args.iterations,
+            lr=args.lr
+        )
+
+        # 保存结果
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = os.path.join(args.output, args.transfer)
+        os.makedirs(output_dir, exist_ok=True)
+        output_filename = f"{args.transfer}_result_{timestamp}.jpg"
+        output_path = os.path.join(output_dir, output_filename)
+        save_image(generated_img, output_path)
+
+        # 显示生成图像
+        if args.show_images:
+            imshow(generated_img, title="Generated Image")
+
+        # 绘制损失曲线
+        if args.plot_loss:
+            plot_loss_curves(loss_history, title_prefix=args.transfer, save_dir=output_dir)
+
+        print("=" * 60)
+        print(f"{args.transfer} 风格迁移完成！")
+        print(f"结果保存到: {output_path}")
+        print("=" * 60)
+
+        return {
+            'transfer_type': args.transfer,
+            'generated_img': generated_img,
+            'content_img': content_img,
+            'style_img': style_img,
+            'loss_history': loss_history,
+            'output_path': output_path
+        }
 
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='神经风格迁移系统')
-    
+
     # 风格迁移参数
-    parser.add_argument('--transfer', type=str, choices=['gatysstyle', 'lapstyle'], default='gatysstyle',
-                       help='风格迁移方法: gatysstyle, lapstyle')
-    
+    parser.add_argument('--transfer', type=str, choices=['gatysstyle', 'lapstyle', 'multigatysstyle'], default='gatysstyle',
+                       help='风格迁移方法: gatysstyle, lapstyle, multigatysstyle')
+
     # 图像参数
     parser.add_argument('--content', type=str, default='content.jpg',
                        help='内容图像文件名')
     parser.add_argument('--style', type=str, default='style.jpg',
                        help='风格图像文件名')
+    parser.add_argument('--content-images', type=str, nargs='+',
+                       help='多内容图像文件名列表')
+    parser.add_argument('--style-images', type=str, nargs='+',
+                       help='多风格图像文件名列表')
     parser.add_argument('--content-dir', type=str, default='examples/content',
                        help='内容图像目录')
     parser.add_argument('--style-dir', type=str, default='examples/style',
                        help='风格图像目录')
-    
+
     # 超参数
     parser.add_argument('--size', type=int, default=256,
                        help='图像大小')
@@ -282,15 +330,19 @@ def main():
                        help='迭代次数')
     parser.add_argument('--lr', type=float, default=0.1,
                        help='学习率')
-    
+
     # 损失权重
     parser.add_argument('--content-weight', type=float, default=1.0,
                        help='内容损失权重')
-    parser.add_argument('--style-weight', type=float, default=1e6,
+    parser.add_argument('--style-weight', type=float, default=1e4,
                        help='风格损失权重')
     parser.add_argument('--lap-weight', type=float, default=0.5e3,
                        help='拉普拉斯损失权重')
-    
+    parser.add_argument('--content-weights', type=float, nargs='+',
+                       help='多内容损失权重列表（仅多内容方法使用）')
+    parser.add_argument('--style-weights', type=float, nargs='+',
+                       help='多风格损失权重列表（仅多风格方法使用）')
+
     # 输出选项
     parser.add_argument('--output', type=str, default='output',
                        help='输出目录')
@@ -300,16 +352,16 @@ def main():
                        help='显示图像')
     parser.add_argument('--cpu', action='store_true',
                        help='强制使用CPU')
-    
+
     # 对比模式
     parser.add_argument('--compare', action='store_true',
                        help='对比多种方法')
     parser.add_argument('--compare-methods', type=str, nargs='+',
                        default=['gatysstyle', 'lapstyle'],
                        help='要对比的方法列表')
-    
+
     args = parser.parse_args()
-    
+
     # 启用对比模式
     if args.compare:
         print("=" * 60)
